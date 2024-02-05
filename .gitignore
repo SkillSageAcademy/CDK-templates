@@ -1,0 +1,31 @@
+# CDK
+cdk.out/
+cdk.context.json
+
+# Node.js
+node_modules/
+package-lock.json
+yarn.lock
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# macOS
+.DS_Store
+
+# Compiled files
+*.js
+*.d.ts
+*.js.map
+
+# Generated AWS CloudFormation templates
+cdk.out/
+*.template.json
+
+# Build artifacts
+dist/
+build/
