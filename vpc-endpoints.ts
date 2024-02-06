@@ -6,10 +6,6 @@ import * as rds from 'aws-cdk-lib/aws-rds';
 import { Construct } from 'constructs';
 
 export interface VPCEndpointResources extends cdk.StackProps {
-    readonly step1LambdaFunction: string,
-    readonly step2LambdaFunction: string,
-    readonly step3LambdaFunction: string,
-    readonly sampleCodeBucket: string,
 }
 
 export class VPCEndpoint extends cdk.Stack {
