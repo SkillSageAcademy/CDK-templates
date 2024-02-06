@@ -11,7 +11,7 @@ export class CognitoAuthorizer extends cdk.Stack {
     constructor(scope: Construct, id: string, props: CognitoAuthorizerResources) {
         super(scope, id, props);
 
-        // Create a Cognito User Pool
+        // Option 1: Create a Cognito User Pool
         const userPool = new cognito.UserPool(this, 'MyUserPool', {
             selfSignUpEnabled: true,
             autoVerify: { email: true },
@@ -23,7 +23,7 @@ export class CognitoAuthorizer extends cdk.Stack {
             cognitoUserPools: [userPool],
         });
 
-        // Create a Lambda function for the custom authorizer
+        // Option 2: Create a Lambda function for the custom authorizer
         const authorizerFunction = new lambda.Function(this, 'MyAuthorizerFunction', {
             runtime: lambda.Runtime.NODEJS_16_X,
             handler: 'index.handler',
