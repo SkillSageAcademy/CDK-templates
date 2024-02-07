@@ -93,7 +93,7 @@ export class StickySessionsMultiRegionStack extends cdk.Stack {
         });
         httpsListener.addTargets('TargetGroup', {
             port: 443,
-            protocol: elbv2.ApplicationProtocol.HTTP,
+            protocol: elbv2.ApplicationProtocol.HTTPS,
             targets: [asg],
             loadBalancingAlgorithmType: elbv2.TargetGroupLoadBalancingAlgorithmType.LEAST_OUTSTANDING_REQUESTS,
             healthCheck: {
@@ -105,6 +105,7 @@ export class StickySessionsMultiRegionStack extends cdk.Stack {
 
         // Add the ALB security group to the Autoscaling Group
         alb.connections.allowFromAnyIpv4(ec2.Port.tcp(80), 'Allow inbound HTTP traffic from anywhere');
+        alb.connections.allowFromAnyIpv4(ec2.Port.tcp(443), 'Allow inbound HTTPS traffic from anywhere');
         asg.connections.allowTo(alb, ec2.Port.tcp(80), 'Allow outbound HTTP traffic to ALB');
     }
 }
