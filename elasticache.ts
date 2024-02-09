@@ -1,5 +1,6 @@
 import * as autoscaling from 'aws-cdk-lib/aws-autoscaling';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as elasticache from 'aws-cdk-lib/aws-elasticache';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as cdk from 'aws-cdk-lib/core';
@@ -34,6 +35,38 @@ export class StickySessionsMultiRegionStack extends cdk.Stack {
             ]
         });
 
+        // Security group for ElastiCache
+        const cacheSecurityGroup = new ec2.SecurityGroup(this, 'CacheSecurityGroup', {
+            vpc: vpc,
+            description: 'Security group for ElastiCache',
+        });
+
+        // Allow inbound traffic from EC2 instance
+        cacheSecurityGroup.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(6379), 'Allow inbound from VPC');
+
+        // Create ElastiCache cluster
+        const cacheCluster = new elasticache.CfnCacheCluster(this, 'MyCacheCluster', {
+            cacheNodeType: 'cache.t2.micro', // Adjust as per your requirements
+            engine: 'redis', // Adjust as per your requirements
+            numCacheNodes: 1, // Adjust as per your requirements
+            vpcSecurityGroupIds: [cacheSecurityGroup.securityGroupId], // You may need to provide security group IDs
+            cacheSubnetGroupName: 'my-cache-subnet-group', // You may need to provide a subnet group name
+            clusterName: 'my-cache-cluster', // Adjust as per your requirements
+        });
+
+        // Create Redis Subnet Group based on the VPC Private Subnets
+        const redisSubnetGroup = new elasticache.CfnSubnetGroup(
+            this,
+            `redisSubnetGroup`,
+            {
+                description: "Subnet group for the redis cluster",
+                subnetIds: vpc.privateSubnets.map((ps) => ps.subnetId),
+                cacheSubnetGroupName: "GT-Redis-Subnet-Group",
+            }
+
+        );
+        cacheCluster.addDependency(redisSubnetGroup)
+
         // Create an Application Load Balancer
         const alb = new elbv2.ApplicationLoadBalancer(this, 'MyALB', {
             vpc,
@@ -61,6 +94,25 @@ export class StickySessionsMultiRegionStack extends cdk.Stack {
             assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
         });
 
+        // Policy granting permission to access ElastiCache
+        const policy = new iam.PolicyStatement({
+            effect: iam.Effect.ALLOW,
+            actions: [
+                'elasticache:DescribeCacheClusters',
+                'elasticache:DescribeCacheParameterGroups',
+                'elasticache:DescribeCacheSecurityGroups',
+                'elasticache:DescribeCacheSubnetGroups',
+                'elasticache:DescribeEngineVersions',
+                'elasticache:DescribeSnapshots',
+                'elasticache:ListAllowedNodeTypeModifications',
+                'elasticache:ListTagsForResource',
+            ],
+            resources: ['*'], // Adjust as per your requirements
+        });
+
+        // Attach policy to the role
+        instanceRole.addToPolicy(policy);
+
         // Add permissions to the IAM role
         instanceRole.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonSSMManagedInstanceCore'));
 
@@ -85,8 +137,6 @@ export class StickySessionsMultiRegionStack extends cdk.Stack {
             targets: [asg],
             vpc,
             targetType: elbv2.TargetType.INSTANCE,
-            stickinessCookieDuration: cdk.Duration.hours(1), // Enable Sticky Sessions
-            stickinessCookieName: 'MyAppCookie', // Set the name of the stickiness cookie
             targetGroupName: 'MyTargetGroup', // Set the name of the target group
         });
 
