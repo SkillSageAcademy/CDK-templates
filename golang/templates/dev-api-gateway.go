@@ -3,6 +3,7 @@ package templates
 import (
 	"path/filepath"
 
+	"github.com/aws/aws-cdk-go/awscdk/awsWafv2"
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsacm"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsapigateway"
@@ -11,7 +12,6 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsroute53"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsroute53targets"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssns"
-	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
 )
@@ -60,13 +60,14 @@ func NewAPIResources(scope constructs.Construct, id string, props *PropsAPIResou
 	apiObject := self.addAPIResources(props, lambdaFunction)
 
 	// Create a Lambda permission for API Gateway to invoke the Lambda function
-	awslambda.NewCfnPermission(self, aws.String(domainName+"Permission"), &awslambda.CfnPermissionProps{
-		Action:      aws.String("lambda:InvokeFunction"),
-		Principal:   aws.String("apigateway.amazonaws.com"),
-		SourceArn:   apiObject.api.RestApiId(),
+	awslambda.NewCfnPermission(self, jsii.String(domainName+"Permission"), &awslambda.CfnPermissionProps{
+		Action:       jsii.String("lambda:InvokeFunction"),
+		Principal:    jsii.String("apigateway.amazonaws.com"),
+		SourceArn:    apiObject.api.RestApiId(),
 		FunctionName: lambdaFunction.FunctionName(),
 	})
 
+	self.createWAF(domainName, apiObject.api)
 	self.createRecordSetsInRoute53(props, domainName, apiObject)
 
 	self.addTags(lambdaFunction.LatestVersion().Stack(), props)
@@ -241,4 +242,102 @@ func (self *APIResources) addTags(resource awscdk.ITaggable, props *PropsAPIReso
 	resource.Tags().SetTag(jsii.String("project"), jsii.String(config.project), jsii.Number(2), jsii.Bool(true))
 	resource.Tags().SetTag(jsii.String("author"), jsii.String(config.author), jsii.Number(3), jsii.Bool(true))
 	resource.Tags().SetTag(jsii.String("site"), jsii.String(props.ApiDomainName), jsii.Number(4), jsii.Bool(true))
+}
+
+func (self *APIResources) createWAF(domainName string, api awsapigateway.IRestApi) {
+	// Create IP sets for allowed IPs
+	ipSet1 := awsWafv2.NewCfnIPSet(self, jsii.String("IPSet1"), &awsWafv2.CfnIPSetProps{
+		Addresses:        []string{"192.0.2.0/24", "198.51.100.0/24"},
+		IpAddressVersion: jsii.String("IPV4"),
+		Scope:            jsii.String("REGIONAL"),
+		Name:             jsii.String("office IP"),
+	})
+
+	ipSet2 := awsWafv2.NewCfnIPSet(self, jsii.String("IPSet2"), &awsWafv2.CfnIPSetProps{
+		Addresses:        []string{"203.0.113.0/24", "2001:0db8:85a3:0000:0000:8a2e:0370:7334"},
+		IpAddressVersion: jsii.String("IPV6"),
+		Scope:            jsii.String("REGIONAL"),
+		Name:             jsii.String("remote Consultant Home IP"),
+	})
+
+	// Create a rule group containing the IP sets
+	ruleGroup := awsWafv2.NewCfnRuleGroup(self, jsii.String("IPRuleGroup"), &awsWafv2.CfnRuleGroupProps{
+		Capacity: jsii.Number(100),
+		Scope:    jsii.String("REGIONAL"),
+		Name:     jsii.String("Allow these IPs  from office and remote"),
+		VisibilityConfig: &awsWafv2.CfnRuleGroup_VisibilityConfigProperty{
+			CloudWatchMetricsEnabled: jsii.Bool(true),
+			MetricName:               jsii.String("IPRuleGroupMetrics"),
+			SampledRequestsEnabled:   jsii.Bool(true),
+		},
+		Rules: []awsWafv2.CfnRuleGroup_RuleProperty{
+			{
+				Name:     jsii.String("AllowFromIPSet1"),
+				Priority: jsii.Number(1),
+				Statement: &awsWafv2.CfnRuleGroup_StatementOneProperty{
+					IpSetReferenceStatement: &awsWafv2.CfnRuleGroup_IpSetReferenceStatementProperty{
+						Arn: ipSet1.AttrArn(),
+					},
+				},
+				VisibilityConfig: &awsWafv2.CfnRuleGroup_VisibilityConfigProperty{
+					SampledRequestsEnabled:   jsii.Bool(true),
+					CloudWatchMetricsEnabled: jsii.Bool(true),
+					MetricName:               jsii.String("AllowFromIPSet1"),
+				},
+			},
+			{
+				Name:     jsii.String("AllowFromIPSet2"),
+				Priority: jsii.Number(2),
+				Statement: &awsWafv2.CfnRuleGroup_StatementOneProperty{
+					IpSetReferenceStatement: &awsWafv2.CfnRuleGroup_IpSetReferenceStatementProperty{
+						Arn: ipSet2.AttrArn(),
+					},
+				},
+				VisibilityConfig: &awsWafv2.CfnRuleGroup_VisibilityConfigProperty{
+					SampledRequestsEnabled:   jsii.Bool(true),
+					CloudWatchMetricsEnabled: jsii.Bool(true),
+					MetricName:               jsii.String("AllowFromIPSet2"),
+				},
+			},
+		},
+	})
+
+	// Create a WebACL
+	webACL := awsWafv2.NewCfnWebACL(self, jsii.String(domainName+"MyWebACL"), &awsWafv2.CfnWebACLProps{
+		Description: jsii.String("API ACL for the " + domainName + " API Gateway"),
+		DefaultAction: &awsWafv2.CfnWebACL_DefaultActionProperty{
+			Block: &map[string]interface{}{},
+		},
+		Scope: jsii.String("REGIONAL"),
+		VisibilityConfig: &awsWafv2.CfnWebACL_VisibilityConfigProperty{
+			CloudWatchMetricsEnabled: jsii.Bool(true),
+			MetricName:               jsii.String("MyWebACLMetrics"),
+			SampledRequestsEnabled:   jsii.Bool(true),
+		},
+		Rules: []awsWafv2.CfnWebACL_RuleProperty{
+			{
+				Name:     jsii.String("IPRuleGroupRule"),
+				Priority: jsii.Number(1),
+				Statement: &awsWafv2.CfnWebACL_StatementOneProperty{
+					RuleGroupReferenceStatement: &awsWafv2.CfnWebACL_RuleGroupReferenceStatementProperty{
+						Arn: ruleGroup.AttrArn(),
+					},
+				},
+				VisibilityConfig: &awsWafv2.CfnWebACL_VisibilityConfigProperty{
+					SampledRequestsEnabled:   jsii.Bool(true),
+					CloudWatchMetricsEnabled: jsii.Bool(true),
+					MetricName:               jsii.String("IPRuleGroupRule"),
+				},
+			},
+		},
+	})
+
+	// Enable WAF for the API Gateway
+	api.Node().AddDependency(webACL)
+
+	// Associate the WebACL with the stage
+	awsWafv2.NewCfnWebACLAssociation(self, jsii.String("WebACLAssociation"), &awsWafv2.CfnWebACLAssociationProps{
+		WebAclArn:   webACL.AttrArn(),
+		ResourceArn: *api.DeploymentStage().StageArn(),
+	})
 }
