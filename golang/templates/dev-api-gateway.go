@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsroute53"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsroute53targets"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssns"
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
 )
@@ -57,6 +58,14 @@ func NewAPIResources(scope constructs.Construct, id string, props *PropsAPIResou
 	lambdaFunction, lambdaRole := self.createLambdaFunctionAndRole(domainName, props, golangCodeAsset)
 
 	apiObject := self.addAPIResources(props, lambdaFunction)
+
+	// Create a Lambda permission for API Gateway to invoke the Lambda function
+	awslambda.NewCfnPermission(self, aws.String(domainName+"Permission"), &awslambda.CfnPermissionProps{
+		Action:      aws.String("lambda:InvokeFunction"),
+		Principal:   aws.String("apigateway.amazonaws.com"),
+		SourceArn:   apiObject.api.RestApiId(),
+		FunctionName: lambdaFunction.FunctionName(),
+	})
 
 	self.createRecordSetsInRoute53(props, domainName, apiObject)
 
