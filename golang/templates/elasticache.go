@@ -109,7 +109,9 @@ func CreateElastiCache() {
 
 	// Attach the target group to the ALB listener
 	listener := alb.AddListener(jsii.String("Listener"), &awselasticloadbalancingv2.BaseApplicationListenerProps{Port: jsii.Number(80)})
-	listener.AddTargets(jsii.String("TargetGroup"), &awselasticloadbalancingv2.AddApplicationTargetsProps{Targets: &targets})
+	httpslistener := alb.AddListener(jsii.String("HTTPSListener"), &awselasticloadbalancingv2.BaseApplicationListenerProps{Port: jsii.Number(443)})
+	listener.AddTargets(jsii.String("TargetGroup"), &awselasticloadbalancingv2.AddApplicationTargetsProps{Targets: &targets, LoadBalancingAlgorithmType: awselasticloadbalancingv2.TargetGroupLoadBalancingAlgorithmType_LEAST_OUTSTANDING_REQUESTS})
+	httpslistener.AddTargets(jsii.String("HTTPSTargetGroup"), &awselasticloadbalancingv2.AddApplicationTargetsProps{Targets: &targets})
 
 	// Synth with options if necessary
 	app.Synth(nil)
